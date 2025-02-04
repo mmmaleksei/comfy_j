@@ -229,45 +229,71 @@ function provisioning_download() {
     
     # Define a proper user agent to prevent blocking
     local user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    curl -I -H "Authorization: Bearer $CIVITAI_TOKEN" https://civitai.com/api/v1/models
     
     if [[ $url =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
         if [[ -n $CIVITAI_TOKEN ]]; then
-            # Get both the redirect URL and the filename from the headers
-            local headers=$(curl -s -I \
+            echo "Debug: Starting Civitai download process..."
+            echo "Debug: Using URL: $url"
+            
+            # Get the initial response headers and store them in a file for inspection
+            local headers_file="/tmp/civitai_headers.txt"
+            curl -v -I \
                 -H "Authorization: Bearer $CIVITAI_TOKEN" \
                 -H "User-Agent: $user_agent" \
-                "$url")
+                "$url" > "$headers_file" 2>&1
             
-            # Extract the redirect URL
-            local redirect_url=$(echo "$headers" | grep -i "location:" | awk '{print $2}' | tr -d '\r')
+            echo "Debug: Initial response headers:"
+            cat "$headers_file"
             
-            # Extract the filename from content-disposition header in the redirect URL
-            local filename=$(curl -s -I \
-                -H "User-Agent: $user_agent" \
-                "$redirect_url" | \
-                grep -i "content-disposition:" | \
-                grep -o 'filename=.*' | \
-                cut -d'=' -f2- | \
-                tr -d '\r\n"')
+            # Extract the redirect URL, being more careful about the extraction
+            local redirect_url=$(grep -i "location:" "$headers_file" | tail -n 1 | sed 's/location://i' | tr -d '\r' | xargs)
             
-            if [[ -n $redirect_url && -n $filename ]]; then
-                echo "Downloading: $filename"
-                # Download the file with the extracted filename
-                wget --user-agent="$user_agent" \
-                     -O "${destination}/${filename}" \
-                     --show-progress \
-                     -e dotbytes="$dotbytes" \
-                     "$redirect_url"
+            echo "Debug: Extracted redirect URL: $redirect_url"
+            
+            if [[ -n $redirect_url ]]; then
+                # Get headers from the redirect URL
+                curl -v -I \
+                    -H "User-Agent: $user_agent" \
+                    "$redirect_url" > "$headers_file" 2>&1
+                    
+                echo "Debug: Redirect response headers:"
+                cat "$headers_file"
                 
-                # Check if download was successful
-                if [[ $? -eq 0 ]]; then
-                    echo "Successfully downloaded: $filename"
+                # Extract filename from various possible header formats
+                local filename=$(grep -i "content-disposition:" "$headers_file" | grep -o 'filename[^=]*=[^;]*' | tail -n 1 | sed 's/filename[^=]*=//;s/^"//;s/"$//' | tr -d '\r\n')
+                
+                # If we couldn't get filename from content-disposition, try to extract from URL
+                if [[ -z $filename ]]; then
+                    filename=$(basename "$redirect_url" | sed 's/\?.*//')
+                fi
+                
+                echo "Debug: Extracted filename: $filename"
+                
+                if [[ -n $filename ]]; then
+                    echo "Starting download of: $filename"
+                    wget --user-agent="$user_agent" \
+                         -O "${destination}/${filename}" \
+                         --show-progress \
+                         -e dotbytes="$dotbytes" \
+                         "$redirect_url"
+                    
+                    if [[ $? -eq 0 ]]; then
+                        echo "Successfully downloaded: $filename"
+                        rm -f "$headers_file"
+                    else
+                        echo "Error: Download failed"
+                        return 1
+                    fi
                 else
-                    echo "Error downloading file from Civitai"
+                    echo "Error: Could not determine filename"
                     return 1
                 fi
             else
-                echo "Error: Could not get download information from Civitai"
+                echo "Error: Could not get redirect URL from Civitai"
+                echo "Debug: Headers received:"
+                cat "$headers_file"
+                rm -f "$headers_file"
                 return 1
             fi
         else
@@ -275,7 +301,6 @@ function provisioning_download() {
             return 1
         fi
     elif [[ -n $HF_TOKEN && $url =~ ^https://([a-zA-Z0-9_-]+\.)?huggingface\.co(/|$|\?) ]]; then
-        # Hugging Face downloads
         wget --header="Authorization: Bearer $HF_TOKEN" \
              --content-disposition \
              --show-progress \
@@ -283,7 +308,6 @@ function provisioning_download() {
              -P "$destination" \
              "$url"
     else
-        # Default download behavior
         wget --content-disposition \
              --show-progress \
              -e dotbytes="$dotbytes" \
