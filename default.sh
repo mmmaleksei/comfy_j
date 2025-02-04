@@ -232,32 +232,42 @@ function provisioning_download() {
     
     if [[ $url =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
         if [[ -n $CIVITAI_TOKEN ]]; then
-            # For Civitai, we need to:
-            # 1. Follow redirects manually
-            # 2. Extract filename from content-disposition
-            # 3. Use the proper user agent
-            
-            # First request with token to get the redirect
-            local redirect_url=$(curl -s -I \
+            # Get both the redirect URL and the filename from the headers
+            local headers=$(curl -s -I \
                 -H "Authorization: Bearer $CIVITAI_TOKEN" \
                 -H "User-Agent: $user_agent" \
-                -w "%{redirect_url}" \
-                "$url" | tail -n 1)
+                "$url")
             
-            if [[ -n $redirect_url ]]; then
-                # Now download from the redirect URL
-                # We use -J to handle content-disposition header
-                # and -L to follow any additional redirects
+            # Extract the redirect URL
+            local redirect_url=$(echo "$headers" | grep -i "location:" | awk '{print $2}' | tr -d '\r')
+            
+            # Extract the filename from content-disposition header in the redirect URL
+            local filename=$(curl -s -I \
+                -H "User-Agent: $user_agent" \
+                "$redirect_url" | \
+                grep -i "content-disposition:" | \
+                grep -o 'filename=.*' | \
+                cut -d'=' -f2- | \
+                tr -d '\r\n"')
+            
+            if [[ -n $redirect_url && -n $filename ]]; then
+                echo "Downloading: $filename"
+                # Download the file with the extracted filename
                 wget --user-agent="$user_agent" \
-                     -J \
-                     -L \
-                     -qnc \
+                     -O "${destination}/${filename}" \
                      --show-progress \
                      -e dotbytes="$dotbytes" \
-                     -P "$destination" \
                      "$redirect_url"
+                
+                # Check if download was successful
+                if [[ $? -eq 0 ]]; then
+                    echo "Successfully downloaded: $filename"
+                else
+                    echo "Error downloading file from Civitai"
+                    return 1
+                fi
             else
-                echo "Error: Could not get download URL from Civitai"
+                echo "Error: Could not get download information from Civitai"
                 return 1
             fi
         else
@@ -265,18 +275,16 @@ function provisioning_download() {
             return 1
         fi
     elif [[ -n $HF_TOKEN && $url =~ ^https://([a-zA-Z0-9_-]+\.)?huggingface\.co(/|$|\?) ]]; then
-        # Hugging Face downloads remain the same
+        # Hugging Face downloads
         wget --header="Authorization: Bearer $HF_TOKEN" \
-             -qnc \
              --content-disposition \
              --show-progress \
              -e dotbytes="$dotbytes" \
              -P "$destination" \
              "$url"
     else
-        # Default download behavior for other URLs
-        wget -qnc \
-             --content-disposition \
+        # Default download behavior
+        wget --content-disposition \
              --show-progress \
              -e dotbytes="$dotbytes" \
              -P "$destination" \
