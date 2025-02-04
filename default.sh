@@ -222,31 +222,65 @@ function provisioning_has_valid_civitai_token() {
     fi
 }
 
-# Download from $1 URL to $2 file path
 function provisioning_download() {
     local url="$1"
     local destination="$2"
     local dotbytes="${3:-4M}"
     
-    # For Civitai downloads, we need to handle the API differently
+    # Define a proper user agent to prevent blocking
+    local user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    
     if [[ $url =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
         if [[ -n $CIVITAI_TOKEN ]]; then
-            # First, get the download URL using the API
-            local model_id=$(echo "$url" | grep -oP 'models/\K\d+')
-            local download_url=$(curl -s -H "Authorization: Bearer $CIVITAI_TOKEN" \
-                "https://civitai.com/api/v1/models/$model_id")
+            # For Civitai, we need to:
+            # 1. Follow redirects manually
+            # 2. Extract filename from content-disposition
+            # 3. Use the proper user agent
             
-            # Extract the actual download URL from the response
-            url=$(echo "$download_url" | grep -oP '"downloadUrl":\s*"\K[^"]+')
+            # First request with token to get the redirect
+            local redirect_url=$(curl -s -I \
+                -H "Authorization: Bearer $CIVITAI_TOKEN" \
+                -H "User-Agent: $user_agent" \
+                -w "%{redirect_url}" \
+                "$url" | tail -n 1)
+            
+            if [[ -n $redirect_url ]]; then
+                # Now download from the redirect URL
+                # We use -J to handle content-disposition header
+                # and -L to follow any additional redirects
+                wget --user-agent="$user_agent" \
+                     -J \
+                     -L \
+                     -qnc \
+                     --show-progress \
+                     -e dotbytes="$dotbytes" \
+                     -P "$destination" \
+                     "$redirect_url"
+            else
+                echo "Error: Could not get download URL from Civitai"
+                return 1
+            fi
+        else
+            echo "Error: CIVITAI_TOKEN is required for downloading from Civitai"
+            return 1
         fi
-        # For Civitai, we don't send the auth token with the actual download
-        wget -qnc --content-disposition --show-progress -e dotbytes="$dotbytes" -P "$destination" "$url"
     elif [[ -n $HF_TOKEN && $url =~ ^https://([a-zA-Z0-9_-]+\.)?huggingface\.co(/|$|\?) ]]; then
         # Hugging Face downloads remain the same
-        wget --header="Authorization: Bearer $HF_TOKEN" -qnc --content-disposition --show-progress -e dotbytes="$dotbytes" -P "$destination" "$url"
+        wget --header="Authorization: Bearer $HF_TOKEN" \
+             -qnc \
+             --content-disposition \
+             --show-progress \
+             -e dotbytes="$dotbytes" \
+             -P "$destination" \
+             "$url"
     else
         # Default download behavior for other URLs
-        wget -qnc --content-disposition --show-progress -e dotbytes="$dotbytes" -P "$destination" "$url"
+        wget -qnc \
+             --content-disposition \
+             --show-progress \
+             -e dotbytes="$dotbytes" \
+             -P "$destination" \
+             "$url"
     fi
 }
 
