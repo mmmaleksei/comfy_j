@@ -229,71 +229,40 @@ function provisioning_download() {
     
     # Define a proper user agent to prevent blocking
     local user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-    curl -I -H "Authorization: Bearer $CIVITAI_TOKEN" https://civitai.com/api/v1/models
     
     if [[ $url =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
         if [[ -n $CIVITAI_TOKEN ]]; then
-            echo "Debug: Starting Civitai download process..."
-            echo "Debug: Using URL: $url"
-            
-            # Get the initial response headers and store them in a file for inspection
-            local headers_file="/tmp/civitai_headers.txt"
-            curl -v -I \
+            # Get the redirect URL
+            local redirect_url=$(curl -s -I \
                 -H "Authorization: Bearer $CIVITAI_TOKEN" \
                 -H "User-Agent: $user_agent" \
-                "$url" > "$headers_file" 2>&1
-            
-            echo "Debug: Initial response headers:"
-            cat "$headers_file"
-            
-            # Extract the redirect URL, being more careful about the extraction
-            local redirect_url=$(grep -i "location:" "$headers_file" | tail -n 1 | sed 's/location://i' | tr -d '\r' | xargs)
-            
-            echo "Debug: Extracted redirect URL: $redirect_url"
+                "$url" | grep -i "location:" | sed 's/location: //i' | tr -d '\r\n')
             
             if [[ -n $redirect_url ]]; then
-                # Get headers from the redirect URL
-                curl -v -I \
-                    -H "User-Agent: $user_agent" \
-                    "$redirect_url" > "$headers_file" 2>&1
-                    
-                echo "Debug: Redirect response headers:"
-                cat "$headers_file"
+                # Extract the filename from the content-disposition parameter in the URL
+                local filename=$(echo "$redirect_url" | grep -o 'filename%3D%22[^%]*%22' | sed 's/filename%3D%22//;s/%22$//' | sed 's/%20/_/g')
                 
-                # Extract filename from various possible header formats
-                local filename=$(grep -i "content-disposition:" "$headers_file" | grep -o 'filename[^=]*=[^;]*' | tail -n 1 | sed 's/filename[^=]*=//;s/^"//;s/"$//' | tr -d '\r\n')
-                
-                # If we couldn't get filename from content-disposition, try to extract from URL
+                # If we couldn't get filename from URL, use a default name
                 if [[ -z $filename ]]; then
-                    filename=$(basename "$redirect_url" | sed 's/\?.*//')
+                    filename=$(basename "$url").safetensors
                 fi
                 
-                echo "Debug: Extracted filename: $filename"
+                echo "Starting download of: $filename"
+                wget --user-agent="$user_agent" \
+                     -O "${destination}/${filename}" \
+                     --show-progress \
+                     -e dotbytes="$dotbytes" \
+                     "$redirect_url"
                 
-                if [[ -n $filename ]]; then
-                    echo "Starting download of: $filename"
-                    wget --user-agent="$user_agent" \
-                         -O "${destination}/${filename}" \
-                         --show-progress \
-                         -e dotbytes="$dotbytes" \
-                         "$redirect_url"
-                    
-                    if [[ $? -eq 0 ]]; then
-                        echo "Successfully downloaded: $filename"
-                        rm -f "$headers_file"
-                    else
-                        echo "Error: Download failed"
-                        return 1
-                    fi
+                if [[ $? -eq 0 ]]; then
+                    echo "Successfully downloaded: $filename"
+                    return 0
                 else
-                    echo "Error: Could not determine filename"
+                    echo "Error downloading file from Civitai"
                     return 1
                 fi
             else
                 echo "Error: Could not get redirect URL from Civitai"
-                echo "Debug: Headers received:"
-                cat "$headers_file"
-                rm -f "$headers_file"
                 return 1
             fi
         else
