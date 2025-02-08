@@ -36,7 +36,7 @@ CHECKPOINT_MODELS=(
 UNET_MODELS=(
   #  "https://huggingface.co/comfyanonymous/flux_dev_scaled_fp8_test/resolve/main/flux_dev_fp8_scaled_diffusion_model.safetensors"
   #  "https://huggingface.co/city96/FLUX.1-dev-gguf/resolve/main/flux1-dev-Q8_0.gguf"
-  https://civitai.com/api/download/models/1320268
+  # https://civitai.com/api/download/models/1320268
 )
 
 LORA_MODELS=(
