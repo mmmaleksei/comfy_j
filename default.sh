@@ -21,17 +21,26 @@ NODES=(
 )
 
 WORKFLOWS=(
-    "https://gist.githubusercontent.com/robballantyne/f8cb692bdcd89c96c0bd1ec0c969d905/raw/2d969f732d7873f0e1ee23b2625b50f201c722a5/flux_dev_example.json"
+
 )
 
-CLIP_MODELS=(
-    "https://huggingface.co/zer0int/CLIP-Registers-Gated_MLP-ViT-L-14/resolve/main/ViT-L-14-REG-TE-only-balanced-HF-format-ckpt12.safetensors?download=true"
+CHECKPOINT_MODELS=(
+    #"https://civitai.com/api/download/models/798204?type=Model&format=SafeTensor&size=full&fp=fp16"
 )
 
 UNET_MODELS=(
 )
 
+LORA_MODELS=(
+)
+
 VAE_MODELS=(
+)
+
+ESRGAN_MODELS=(
+)
+
+CONTROLNET_MODELS=(
 )
 
 ### DO NOT EDIT BELOW HERE UNLESS YOU KNOW WHAT YOU ARE DOING ###
@@ -41,29 +50,24 @@ function provisioning_start() {
     provisioning_get_apt_packages
     provisioning_get_nodes
     provisioning_get_pip_packages
-    workflows_dir="${COMFYUI_DIR}/user/default/workflows"
-    mkdir -p "${workflows_dir}"
     provisioning_get_files \
-        "${workflows_dir}" \
-        "${WORKFLOWS[@]}"
-    # Get licensed models if HF_TOKEN set & valid
-    if provisioning_has_valid_hf_token; then
-       # UNET_MODELS+=("https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors")
-        VAE_MODELS+=("https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors")
-    else
-       # UNET_MODELS+=("https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors")
-        VAE_MODELS+=("https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors")
-        sed -i 's/flux1-dev\.safetensors/flux1-schnell.safetensors/g' "${workflows_dir}/flux_dev_example.json"
-    fi
+        "${COMFYUI_DIR}/models/checkpoints" \
+        "${CHECKPOINT_MODELS[@]}"
     provisioning_get_files \
         "${COMFYUI_DIR}/models/unet" \
         "${UNET_MODELS[@]}"
     provisioning_get_files \
+        "${COMFYUI_DIR}/models/lora" \
+        "${LORA_MODELS[@]}"
+    provisioning_get_files \
+        "${COMFYUI_DIR}/models/controlnet" \
+        "${CONTROLNET_MODELS[@]}"
+    provisioning_get_files \
         "${COMFYUI_DIR}/models/vae" \
         "${VAE_MODELS[@]}"
     provisioning_get_files \
-        "${COMFYUI_DIR}/models/clip" \
-        "${CLIP_MODELS[@]}"
+        "${COMFYUI_DIR}/models/esrgan" \
+        "${ESRGAN_MODELS[@]}"
     provisioning_print_end
 }
 
