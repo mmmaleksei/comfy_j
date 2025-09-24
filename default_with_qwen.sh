@@ -25,7 +25,7 @@ WORKFLOWS=(
 )
 
 CHECKPOINT_MODELS=(
-
+    
 )
 
 UNET_MODELS=(
@@ -33,7 +33,6 @@ UNET_MODELS=(
 )
 
 LORA_MODELS=(
-
 )
 
 VAE_MODELS=(
@@ -41,13 +40,12 @@ VAE_MODELS=(
 )
 
 ESRGAN_MODELS=(
-
 )
 
 CONTROLNET_MODELS=(
-
 )
 
+# NEW: text encoders bucket
 TEXT_ENCODER_MODELS=(
     "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
 )
@@ -59,6 +57,10 @@ function provisioning_start() {
     provisioning_get_apt_packages
     provisioning_get_nodes
     provisioning_get_pip_packages
+
+    # Log counts for visibility
+    echo "[INFO] counts -> checkpoints:${#CHECKPOINT_MODELS[@]} unet:${#UNET_MODELS[@]} lora:${#LORA_MODELS[@]} controlnet:${#CONTROLNET_MODELS[@]} vae:${#VAE_MODELS[@]} esrgan:${#ESRGAN_MODELS[@]} text_encoders:${#TEXT_ENCODER_MODELS[@]}"
+
     provisioning_get_files \
         "${COMFYUI_DIR}/models/checkpoints" \
         "${CHECKPOINT_MODELS[@]}"
@@ -77,6 +79,9 @@ function provisioning_start() {
     provisioning_get_files \
         "${COMFYUI_DIR}/models/esrgan" \
         "${ESRGAN_MODELS[@]}"
+    provisioning_get_files \
+        "${COMFYUI_DIR}/models/text_encoders" \
+        "${TEXT_ENCODER_MODELS[@]}"
     provisioning_print_end
 }
 
@@ -116,13 +121,14 @@ function provisioning_get_nodes() {
 }
 
 function provisioning_get_files() {
-    if [[ -z $2 ]]; then return 1; fi
+    # If only a dir was provided and no files, just skip
+    if [[ $# -lt 2 ]]; then return 0; fi
     
     dir="$1"
     mkdir -p "$dir"
     shift
     arr=("$@")
-    printf "Downloading %s model(s) to %s...\n" "${#arr[@]}" "$dir"
+    printf "Downloading %s file(s) to %s...\n" "${#arr[@]}" "$dir"
     for url in "${arr[@]}"; do
         printf "Downloading: %s\n" "${url}"
         provisioning_download "${url}" "${dir}"
@@ -172,13 +178,13 @@ function provisioning_has_valid_civitai_token() {
 
 # Download from $1 URL to $2 file path
 function provisioning_download() {
+    local auth_token=""
     if [[ -n $HF_TOKEN && $1 =~ ^https://([a-zA-Z0-9_-]+\.)?huggingface\.co(/|$|\?) ]]; then
         auth_token="$HF_TOKEN"
-    elif 
-        [[ -n $CIVITAI_TOKEN && $1 =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
+    elif [[ -n $CIVITAI_TOKEN && $1 =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
         auth_token="$CIVITAI_TOKEN"
     fi
-    if [[ -n $auth_token ]];then
+    if [[ -n $auth_token ]]; then
         wget --header="Authorization: Bearer $auth_token" -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
     else
         wget -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
